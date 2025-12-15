@@ -1,0 +1,31 @@
+[package]
+name = "dash-charts"
+version = "0.1.0"
+edition = "2024"
+authors = ["EngineVector <tomas@enginevector.com>"]
+license = "MIT"
+repository = "https://github.com/enginevector/btc-exchange-dash"
+description = "D3.js-style SVG charting for BTC Exchange Dashboard"
+
+[dependencies]
+dash-core = { path = "../dash-core" }
+
+# Leptos for reactive components
+leptos = { version = "0.7", features = ["csr"] }
+
+# Web APIs for SVG/Canvas manipulation
+web-sys = { version = "0.3", features = [
+    "Window",
+    "Document",
+    "Element",
+    "HtmlElement",
+    "DomRect",
+    "SvgElement",
+    "SvgGraphicsElement",
+    "MouseEvent",
+] }
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+
+# Logging
+tracing = "0.1"
