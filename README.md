@@ -1,4 +1,4 @@
-# cryptocurrency-htfx-exchange-dash-rs
+# Cryptocurrency HFTx Exchange Dash (Rust)
 High-Frequency Trading Exchange Cryptocurrency Tx Service w/ Dash using Rust, Rust Tokio Asyc, Leptos WASM and Canvas.
 
 
