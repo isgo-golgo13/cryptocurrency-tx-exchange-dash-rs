@@ -292,3 +292,8 @@ wasmtime --dir=. target/wasm32-wasip1/release/dash_app.wasm
 ```
 
 ---
+
+
+## License
+
+MIT License — EngineVector © 2025
