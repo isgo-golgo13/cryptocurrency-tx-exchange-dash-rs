@@ -14,7 +14,9 @@ Trading Exchange Cryptocurrency (BTC) Tx Service w/ Dash UI using Rust, Rust Tok
 ---
 
 
-![btc-tx-dash](docs/tx-btc-dash.png)
+![btc-tx-dash-1](docs/tx-btc-dash-screenshot1.png)
+
+![btc-tx-dash-2](docs/tx-btc-dash-screenshot2.png)
 
 
 ---
