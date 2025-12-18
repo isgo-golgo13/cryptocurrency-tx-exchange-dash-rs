@@ -267,6 +267,13 @@ Cleanup:
 ### Run the BTC Dash UI 
 
 ```shell
+make install-deps
+make build
+```
+or 
+
+```shell
+make install-deps
 # Terminal 1
 make server
 
