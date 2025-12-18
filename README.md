@@ -280,13 +280,13 @@ Cleanup:
 ### Run the BTC Dash UI 
 
 ```shell
-make install-deps
+make install-deps or make install-trunk
 make build
 ```
 or 
 
 ```shell
-make install-deps
+make install-deps or make install-trunk
 # Terminal 1
 make server
 
