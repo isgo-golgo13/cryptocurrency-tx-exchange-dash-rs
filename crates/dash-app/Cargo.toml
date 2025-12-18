@@ -7,9 +7,6 @@ license = "MIT"
 repository = "https://github.com/enginevector/btc-exchange-dash"
 description = "BTC Exchange Dashboard - WASM frontend application"
 
-[lib]
-crate-type = ["cdylib", "rlib"]
-
 [dependencies]
 dash-core = { path = "../dash-core" }
 dash-state = { path = "../dash-state" }
