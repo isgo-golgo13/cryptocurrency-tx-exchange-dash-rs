@@ -12,11 +12,9 @@ dash-core = { path = "../dash-core" }
 dash-state = { path = "../dash-state" }
 dash-charts = { path = "../dash-charts" }
 
-# Leptos
 leptos = { version = "0.7", features = ["csr"] }
 
-# Time
 chrono = { version = "0.4", features = ["serde", "wasm-bindgen"] }
+web-sys = { version = "0.3", features = ["Window", "Location"] }
 
-# Logging
 tracing = "0.1"

@@ -1,6 +1,4 @@
-//! Mock data engine for development
-//!
-//! Generates realistic-looking market data for testing the dashboard.
+//! Mock data engine for demo/development
 
 use std::time::Duration;
 
@@ -14,7 +12,6 @@ use dash_core::{
     Price, Quantity, Symbol, Ticker, Trade, TradeSide, WsMessage,
 };
 
-/// Mock market state
 struct MockMarket {
     symbol: Symbol,
     price: f64,
@@ -38,50 +35,39 @@ impl MockMarket {
         }
     }
 
-    /// Generate next price tick
     fn tick(&mut self) -> f64 {
         let mut rng = rand::thread_rng();
-
-        // Random walk with mean reversion
         let drift = self.trend * 0.0001;
         let random = (rng.r#gen::<f64>() - 0.5) * 2.0 * self.volatility;
 
-        // Occasionally shift trend
         if rng.r#gen::<f64>() < 0.01 {
             self.trend = (rng.r#gen::<f64>() - 0.5) * 2.0;
         }
 
         self.price *= 1.0 + drift + random;
-        self.price = self.price.max(1000.0); // Floor price
+        self.price = self.price.max(1000.0);
         self.price
     }
 
-    /// Generate a random trade
     fn generate_trade(&mut self) -> Trade {
         let mut rng = rand::thread_rng();
-
         let price = self.tick();
         let side = if rng.r#gen::<bool>() { TradeSide::Buy } else { TradeSide::Sell };
-
-        // Log-normal quantity distribution (lots of small trades, few large)
         let base_qty = rng.r#gen::<f64>().exp() * 0.1;
         let quantity = base_qty.min(10.0);
-
         Trade::new(self.symbol.clone(), price, quantity, side)
     }
 
-    /// Generate order book snapshot
     fn generate_orderbook(&mut self) -> OrderBookSnapshot {
         let mut rng = rand::thread_rng();
         self.sequence += 1;
 
         let mid = self.price;
-        let spread = mid * 0.0002; // 0.02% spread
+        let spread = mid * 0.0002;
 
         let mut bids = Vec::with_capacity(20);
         let mut asks = Vec::with_capacity(20);
 
-        // Generate bid levels (descending prices)
         let mut bid_price = mid - spread / 2.0;
         for _ in 0..20 {
             let qty = rng.r#gen::<f64>() * 2.0 + 0.1;
@@ -90,7 +76,6 @@ impl MockMarket {
             bid_price -= rng.r#gen::<f64>() * 5.0 + 1.0;
         }
 
-        // Generate ask levels (ascending prices)
         let mut ask_price = mid + spread / 2.0;
         for _ in 0..20 {
             let qty = rng.r#gen::<f64>() * 2.0 + 0.1;
@@ -108,7 +93,6 @@ impl MockMarket {
         }
     }
 
-    /// Generate ticker
     fn generate_ticker(&self) -> Ticker {
         let mut rng = rand::thread_rng();
 
@@ -138,7 +122,6 @@ impl MockMarket {
         }
     }
 
-    /// Update or create candle
     fn update_candle(&mut self, trade: &Trade) -> Option<Candle> {
         let now = Utc::now().timestamp_millis();
         let interval_ms = CandleInterval::M1.as_millis();
@@ -148,7 +131,6 @@ impl MockMarket {
         let qty = trade.quantity.as_f64();
 
         if self.candle_open_time != candle_time {
-            // Close previous candle and start new one
             let prev = self.current_candle.take().map(|mut c| {
                 c.close_candle();
                 c
@@ -164,7 +146,6 @@ impl MockMarket {
 
             prev
         } else {
-            // Update current candle
             if let Some(ref mut candle) = self.current_candle {
                 candle.update(price, qty);
             }
@@ -173,5 +154,50 @@ impl MockMarket {
     }
 }
 
-/// Run the mock data engine
 pub async fn run_mock_engine(tx: broadcast::Sender<WsMessage>) {
+    tracing::info!("Starting mock data engine");
+
+    let mut market = MockMarket::new(Symbol::new("BTC-USD"), 95000.0);
+
+    let mut trade_interval = interval(Duration::from_millis(100));
+    let mut book_interval = interval(Duration::from_millis(250));
+    let mut ticker_interval = interval(Duration::from_secs(1));
+    let mut heartbeat_interval = interval(Duration::from_secs(30));
+
+    loop {
+        tokio::select! {
+            _ = trade_interval.tick() => {
+                let trade = market.generate_trade();
+
+                if let Some(closed_candle) = market.update_candle(&trade) {
+                    let _ = tx.send(WsMessage::Candle(closed_candle));
+                }
+
+                if let Some(ref candle) = market.current_candle {
+                    let _ = tx.send(WsMessage::Candle(candle.clone()));
+                }
+
+                let _ = tx.send(WsMessage::Trade(trade));
+            }
+
+            _ = book_interval.tick() => {
+                let book = market.generate_orderbook();
+                let depth = MarketDepth::from_orderbook(&book);
+
+                let _ = tx.send(WsMessage::OrderBook(book));
+                let _ = tx.send(WsMessage::Depth(depth));
+            }
+
+            _ = ticker_interval.tick() => {
+                let ticker = market.generate_ticker();
+                let _ = tx.send(WsMessage::Ticker(ticker));
+            }
+
+            _ = heartbeat_interval.tick() => {
+                let _ = tx.send(WsMessage::Heartbeat {
+                    timestamp: Utc::now().timestamp_millis(),
+                });
+            }
+        }
+    }
+}

@@ -1,12 +1,9 @@
 //! Trade history (tape) component
-//!
-//! Displays recent trades in a scrolling list with whale detection.
 
 use dash_core::{colors, Trade, TradeSide, TradeClassification, ValueThresholdClassifier, TradeClassifier};
 use dash_state::MarketState;
 use leptos::prelude::*;
 
-/// Trade history configuration
 #[derive(Debug, Clone)]
 pub struct TradeHistoryConfig {
     pub max_visible: usize,
@@ -37,7 +34,6 @@ impl TradeHistoryConfig {
     }
 }
 
-/// Trade history component
 #[component]
 pub fn TradeHistory(
     #[prop(into)] market: MarketState,
@@ -57,8 +53,7 @@ pub fn TradeHistory(
     };
 
     view! {
-        <div class="trade-history" class:compact=compact>
-            // Header
+        <div class="trade-history">
             <div class="th-header">
                 <span class="th-col time">"Time"</span>
                 <span class="th-col side">"Side"</span>
@@ -71,7 +66,6 @@ pub fn TradeHistory(
                 }}
             </div>
 
-            // Trade list
             <div class="th-list">
                 <For
                     each=visible_trades
@@ -82,7 +76,6 @@ pub fn TradeHistory(
                         } else {
                             None
                         };
-
                         view! {
                             <TradeRow
                                 trade=trade
@@ -98,36 +91,20 @@ pub fn TradeHistory(
     }
 }
 
-/// Single trade row
 #[component]
 fn TradeRow(
     trade: Trade,
     show_value: bool,
     classification: Option<TradeClassification>,
-    #[prop(default = false)] compact: bool,
+    compact: bool,
 ) -> impl IntoView {
-    let time_str = if compact {
-        trade.time_short()
-    } else {
-        trade.time_str()
-    };
-
+    let time_str = if compact { trade.time_short() } else { trade.time_str() };
     let price = trade.price.as_f64();
     let qty = trade.quantity.as_f64();
     let value = trade.value();
 
-    let price_str = if price >= 1000.0 {
-        format!("{:.2}", price)
-    } else {
-        format!("{:.4}", price)
-    };
-
-    let qty_str = if qty >= 1.0 {
-        format!("{:.4}", qty)
-    } else {
-        format!("{:.6}", qty)
-    };
-
+    let price_str = if price >= 1000.0 { format!("{:.2}", price) } else { format!("{:.4}", price) };
+    let qty_str = format!("{:.4}", qty);
     let value_str = if value >= 1_000_000.0 {
         format!("{:.2}M", value / 1_000_000.0)
     } else if value >= 1_000.0 {
@@ -137,7 +114,6 @@ fn TradeRow(
     };
 
     let side_color = trade.side.color();
-    let side_label = trade.side.label();
     let side_arrow = trade.side.arrow();
 
     let row_class = match classification {
@@ -146,158 +122,17 @@ fn TradeRow(
         _ => "th-row",
     };
 
-    let whale_icon = classification.and_then(|c| c.icon());
-
     view! {
-        <div class=row_class class=trade.side.css_class()>
+        <div class=row_class>
             <span class="th-col time">{time_str}</span>
-            <span class="th-col side" style=format!("color: {}", side_color)>
-                {side_arrow}
-                {if !compact { Some(format!(" {}", side_label)) } else { None }}
-            </span>
-            <span class="th-col price" style=format!("color: {}", side_color)>
-                {price_str}
-            </span>
-            <span class="th-col size">
-                {qty_str}
-                {whale_icon.map(|icon| view! { <span class="whale-icon">{icon}</span> })}
-            </span>
+            <span class="th-col side" style=format!("color: {}", side_color)>{side_arrow}</span>
+            <span class="th-col price" style=format!("color: {}", side_color)>{price_str}</span>
+            <span class="th-col size">{qty_str}</span>
             {if show_value {
                 Some(view! { <span class="th-col value">{value_str}</span> })
             } else {
                 None
             }}
-        </div>
-    }
-}
-
-/// Trade flow summary (aggregated buy/sell volumes)
-#[component]
-pub fn TradeFlowSummary(
-    #[prop(into)] market: MarketState,
-    #[prop(default = 50)] window: usize,
-) -> impl IntoView {
-    let trades = market.trades;
-
-    let flow_data = move || {
-        let trade_list = trades.get();
-        let recent: Vec<_> = trade_list.iter().take(window).collect();
-
-        if recent.is_empty() {
-            return (0.0, 0.0, 0.5);
-        }
-
-        let mut buy_vol = 0.0;
-        let mut sell_vol = 0.0;
-
-        for trade in recent {
-            match trade.side {
-                TradeSide::Buy => buy_vol += trade.quantity.as_f64(),
-                TradeSide::Sell => sell_vol += trade.quantity.as_f64(),
-            }
-        }
-
-        let total = buy_vol + sell_vol;
-        let buy_ratio = if total > 0.0 { buy_vol / total } else { 0.5 };
-
-        (buy_vol, sell_vol, buy_ratio)
-    };
-
-    view! {
-        <div class="trade-flow-summary">
-            <div class="tfs-header">"Trade Flow"</div>
-            <div class="tfs-content">
-                // Buy volume
-                <div class="tfs-side buy">
-                    <span class="label">"Buy"</span>
-                    <span class="value" style=format!("color: {}", colors::BULL)>
-                        {move || format!("{:.4}", flow_data().0)}
-                    </span>
-                </div>
-
-                // Visual bar
-                <div class="tfs-bar">
-                    <div
-                        class="tfs-bar-fill buy"
-                        style=move || format!(
-                            "width: {}%; background: {}",
-                            flow_data().2 * 100.0,
-                            colors::BULL
-                        )
-                    />
-                    <div
-                        class="tfs-bar-fill sell"
-                        style=move || format!(
-                            "width: {}%; background: {}",
-                            (1.0 - flow_data().2) * 100.0,
-                            colors::BEAR
-                        )
-                    />
-                </div>
-
-                // Sell volume
-                <div class="tfs-side sell">
-                    <span class="label">"Sell"</span>
-                    <span class="value" style=format!("color: {}", colors::BEAR)>
-                        {move || format!("{:.4}", flow_data().1)}
-                    </span>
-                </div>
-            </div>
-        </div>
-    }
-}
-
-/// Recent large trades alert
-#[component]
-pub fn LargeTradesAlert(
-    #[prop(into)] market: MarketState,
-    #[prop(default = 100_000.0)] threshold: f64,
-) -> impl IntoView {
-    let trades = market.trades;
-    let classifier = ValueThresholdClassifier {
-        large_threshold: threshold,
-        ..Default::default()
-    };
-
-    let large_trades = move || {
-        trades.get()
-            .into_iter()
-            .filter(|t| {
-                matches!(
-                    classifier.classify(t),
-                    TradeClassification::Large | TradeClassification::Whale
-                )
-            })
-            .take(5)
-            .collect::<Vec<_>>()
-    };
-
-    view! {
-        <div class="large-trades-alert">
-            <div class="lta-header">
-                <span class="icon">"🐋"</span>
-                <span class="title">"Large Trades"</span>
-            </div>
-            <div class="lta-list">
-                <For
-                    each=large_trades
-                    key=|t| t.id.clone()
-                    children=move |trade| {
-                        let is_whale = trade.value() >= 1_000_000.0;
-                        view! {
-                            <div class="lta-item" class:whale=is_whale>
-                                <span class="time">{trade.time_short()}</span>
-                                <span class="side" style=format!("color: {}", trade.side.color())>
-                                    {trade.side.arrow()}
-                                </span>
-                                <span class="value">
-                                    {format!("${:.0}K", trade.value() / 1000.0)}
-                                </span>
-                            </div>
-                        }
-                    }
-                />
-            </div>
         </div>
     }
 }

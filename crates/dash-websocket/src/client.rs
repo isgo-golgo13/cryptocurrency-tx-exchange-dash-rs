@@ -1,14 +1,14 @@
 //! WebSocket client implementation with auto-reconnection
 
 use crate::{ReconnectPolicy, WsConfig};
-use dash_core::{ConnectionState, WsMessage};
+use dash_core::WsMessage;
 use dash_state::AppState;
 use futures::StreamExt;
 use gloo_net::websocket::{futures::WebSocket, Message};
 use gloo_timers::future::TimeoutFuture;
 use leptos::prelude::*;
-use std::cell::Cell;
-use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use wasm_bindgen_futures::spawn_local;
 
 // ============================================================================
@@ -59,31 +59,25 @@ impl WsClient {
         let mut policy = self.config.reconnect_policy.clone();
 
         loop {
-            // Check if client was stopped
             if handle.is_stopped() {
                 tracing::info!("WebSocket client stopped by handle");
                 self.state.set_disconnected();
                 break;
             }
 
-            // Update state to connecting
             self.state.set_connecting();
             tracing::info!("Connecting to WebSocket: {}", self.config.url);
 
-            // Attempt connection
             match WebSocket::open(&self.config.url) {
                 Ok(ws) => {
-                    // Connection successful
                     self.state.set_connected();
                     policy.reset();
                     attempt = 0;
 
                     tracing::info!("WebSocket connected");
 
-                    // Handle the connection
                     self.handle_connection(ws, &handle).await;
 
-                    // Connection closed
                     if handle.is_stopped() {
                         tracing::info!("WebSocket stopped during connection");
                         break;
@@ -98,28 +92,16 @@ impl WsClient {
                 }
             }
 
-            // Check if we should reconnect
             if !policy.should_reconnect(attempt) {
                 tracing::error!("Max reconnection attempts ({}) reached", attempt);
                 self.state.set_error("Max reconnection attempts reached");
                 break;
             }
 
-            // Calculate delay and wait
             let delay = policy.delay_ms(attempt);
             self.state.set_reconnecting();
-            tracing::info!(
-                "Reconnecting in {}ms (attempt {}/{})",
-                delay,
-                attempt + 1,
-                if self.config.reconnect_policy.max_attempts == 0 {
-                    "∞".to_string()
-                } else {
-                    self.config.reconnect_policy.max_attempts.to_string()
-                }
-            );
+            tracing::info!("Reconnecting in {}ms (attempt {})", delay, attempt + 1);
 
-            // Wait before reconnecting
             TimeoutFuture::new(delay).await;
             attempt += 1;
         }
@@ -129,14 +111,6 @@ impl WsClient {
     async fn handle_connection(&self, ws: WebSocket, handle: &WsHandle) {
         let (_write, mut read) = ws.split();
 
-        // TODO: If heartbeat is enabled, spawn heartbeat task
-        // let heartbeat_handle = if self.config.heartbeat_interval_ms > 0 {
-        //     Some(spawn_heartbeat(write.clone(), self.config.heartbeat_interval_ms))
-        // } else {
-        //     None
-        // };
-
-        // Read messages
         while let Some(msg) = read.next().await {
             if handle.is_stopped() {
                 break;
@@ -147,7 +121,6 @@ impl WsClient {
                     self.process_message(&text);
                 }
                 Ok(Message::Bytes(bytes)) => {
-                    // Try to parse as UTF-8 JSON
                     if let Ok(text) = String::from_utf8(bytes) {
                         self.process_message(&text);
                     }
@@ -167,7 +140,7 @@ impl WsClient {
                 self.dispatch_message(msg);
             }
             Err(e) => {
-                tracing::warn!("Failed to parse WebSocket message: {} - {}", e, &text[..text.len().min(100)]);
+                tracing::warn!("Failed to parse WebSocket message: {}", e);
             }
         }
     }
@@ -198,44 +171,35 @@ impl WsClient {
 }
 
 // ============================================================================
-// WEBSOCKET HANDLE
+// WEBSOCKET HANDLE (Send + Sync)
 // ============================================================================
 
 /// Handle for controlling the WebSocket connection
 #[derive(Clone)]
 pub struct WsHandle {
-    stopped: Rc<Cell<bool>>,
+    stopped: Arc<AtomicBool>,
 }
 
 impl WsHandle {
     fn new() -> Self {
         Self {
-            stopped: Rc::new(Cell::new(false)),
+            stopped: Arc::new(AtomicBool::new(false)),
         }
     }
 
     /// Stop the WebSocket connection
     pub fn stop(&self) {
-        self.stopped.set(true);
+        self.stopped.store(true, Ordering::SeqCst);
     }
 
     /// Check if stopped
     pub fn is_stopped(&self) -> bool {
-        self.stopped.get()
+        self.stopped.load(Ordering::SeqCst)
     }
 
     /// Check if running
     pub fn is_running(&self) -> bool {
-        !self.stopped.get()
-    }
-}
-
-impl Drop for WsHandle {
-    fn drop(&mut self) {
-        // Auto-stop when handle is dropped (if this is the last reference)
-        if Rc::strong_count(&self.stopped) == 1 {
-            self.stop();
-        }
+        !self.is_stopped()
     }
 }
 
@@ -246,28 +210,12 @@ impl Drop for WsHandle {
 /// Hook to create and manage WebSocket connection in Leptos components
 pub fn use_websocket(state: AppState, url: Option<String>) -> WsHandle {
     let config = WsConfig::new(url.unwrap_or_else(|| crate::DEFAULT_WS_URL.to_string()));
-
-    let handle = WsClient::with_config(state, config).connect();
-
-    // Cleanup on component unmount
-    let handle_cleanup = handle.clone();
-    on_cleanup(move || {
-        handle_cleanup.stop();
-    });
-
-    handle
+    WsClient::with_config(state, config).connect()
 }
 
 /// Hook with custom configuration
 pub fn use_websocket_with_config(state: AppState, config: WsConfig) -> WsHandle {
-    let handle = WsClient::with_config(state, config).connect();
-
-    let handle_cleanup = handle.clone();
-    on_cleanup(move || {
-        handle_cleanup.stop();
-    });
-
-    handle
+    WsClient::with_config(state, config).connect()
 }
 
 // ============================================================================

@@ -171,7 +171,7 @@ pub fn CandlestickChart(
                             let fill = candle.fill_color();
 
                             view! {
-                                <g class="candle" class=candle.css_class()>
+                                <g class=format!("candle {}", candle.css_class())>
                                     // Wick
                                     <line
                                         x1=x_center

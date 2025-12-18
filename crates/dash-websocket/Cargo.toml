@@ -11,21 +11,16 @@ description = "WebSocket client with auto-reconnection for BTC Exchange Dashboar
 dash-core = { path = "../dash-core" }
 dash-state = { path = "../dash-state" }
 
-# Leptos for reactive integration
 leptos = { version = "0.7", features = ["csr"] }
 
-# WebSocket & networking
 gloo-net = "0.6"
-gloo-timers = "0.3"
+gloo-timers = { version = "0.3", features = ["futures"] }
 
-# Async
 futures = "0.3"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 
-# Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
-# Logging
 tracing = "0.1"
