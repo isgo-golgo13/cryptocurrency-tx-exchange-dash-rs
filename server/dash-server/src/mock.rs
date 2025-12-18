@@ -1,4 +1,4 @@
-//! Mock data engine for demo/development
+//! Mock data engine for development
 //!
 //! Generates realistic-looking market data for testing the dashboard.
 
@@ -10,7 +10,7 @@ use tokio::sync::broadcast;
 use tokio::time::interval;
 
 use dash_core::{
-    Candle, CandleInterval, MarketDepth, DepthPoint, OrderBookLevel, OrderBookSnapshot,
+    Candle, CandleInterval, MarketDepth, OrderBookLevel, OrderBookSnapshot,
     Price, Quantity, Symbol, Ticker, Trade, TradeSide, WsMessage,
 };
 
@@ -44,11 +44,11 @@ impl MockMarket {
 
         // Random walk with mean reversion
         let drift = self.trend * 0.0001;
-        let random = (rng.gen::<f64>() - 0.5) * 2.0 * self.volatility;
+        let random = (rng.r#gen::<f64>() - 0.5) * 2.0 * self.volatility;
 
         // Occasionally shift trend
-        if rng.gen::<f64>() < 0.01 {
-            self.trend = (rng.gen::<f64>() - 0.5) * 2.0;
+        if rng.r#gen::<f64>() < 0.01 {
+            self.trend = (rng.r#gen::<f64>() - 0.5) * 2.0;
         }
 
         self.price *= 1.0 + drift + random;
@@ -61,10 +61,10 @@ impl MockMarket {
         let mut rng = rand::thread_rng();
 
         let price = self.tick();
-        let side = if rng.gen::<bool>() { TradeSide::Buy } else { TradeSide::Sell };
+        let side = if rng.r#gen::<bool>() { TradeSide::Buy } else { TradeSide::Sell };
 
         // Log-normal quantity distribution (lots of small trades, few large)
-        let base_qty = rng.gen::<f64>().exp() * 0.1;
+        let base_qty = rng.r#gen::<f64>().exp() * 0.1;
         let quantity = base_qty.min(10.0);
 
         Trade::new(self.symbol.clone(), price, quantity, side)
@@ -84,19 +84,19 @@ impl MockMarket {
         // Generate bid levels (descending prices)
         let mut bid_price = mid - spread / 2.0;
         for _ in 0..20 {
-            let qty = rng.gen::<f64>() * 2.0 + 0.1;
+            let qty = rng.r#gen::<f64>() * 2.0 + 0.1;
             let orders = rng.gen_range(1..10);
             bids.push(OrderBookLevel::new(bid_price, qty, orders));
-            bid_price -= rng.gen::<f64>() * 5.0 + 1.0;
+            bid_price -= rng.r#gen::<f64>() * 5.0 + 1.0;
         }
 
         // Generate ask levels (ascending prices)
         let mut ask_price = mid + spread / 2.0;
         for _ in 0..20 {
-            let qty = rng.gen::<f64>() * 2.0 + 0.1;
+            let qty = rng.r#gen::<f64>() * 2.0 + 0.1;
             let orders = rng.gen_range(1..10);
             asks.push(OrderBookLevel::new(ask_price, qty, orders));
-            ask_price += rng.gen::<f64>() * 5.0 + 1.0;
+            ask_price += rng.r#gen::<f64>() * 5.0 + 1.0;
         }
 
         OrderBookSnapshot {
@@ -112,9 +112,9 @@ impl MockMarket {
     fn generate_ticker(&self) -> Ticker {
         let mut rng = rand::thread_rng();
 
-        let open = self.price * (1.0 - rng.gen::<f64>() * 0.02);
-        let high = self.price * (1.0 + rng.gen::<f64>() * 0.03);
-        let low = self.price * (1.0 - rng.gen::<f64>() * 0.03);
+        let open = self.price * (1.0 - rng.r#gen::<f64>() * 0.02);
+        let high = self.price * (1.0 + rng.r#gen::<f64>() * 0.03);
+        let low = self.price * (1.0 - rng.r#gen::<f64>() * 0.03);
 
         let change = self.price - open;
         let change_pct = change / open * 100.0;
@@ -123,13 +123,13 @@ impl MockMarket {
             symbol: self.symbol.clone(),
             last_price: Price::new(self.price),
             bid_price: Price::new(self.price * 0.9999),
-            bid_qty: Quantity::new(rng.gen::<f64>() * 5.0),
+            bid_qty: Quantity::new(rng.r#gen::<f64>() * 5.0),
             ask_price: Price::new(self.price * 1.0001),
-            ask_qty: Quantity::new(rng.gen::<f64>() * 5.0),
+            ask_qty: Quantity::new(rng.r#gen::<f64>() * 5.0),
             high_24h: Price::new(high),
             low_24h: Price::new(low),
-            volume_24h: Quantity::new(rng.gen::<f64>() * 10000.0 + 1000.0),
-            quote_volume_24h: rng.gen::<f64>() * 500_000_000.0,
+            volume_24h: Quantity::new(rng.r#gen::<f64>() * 10000.0 + 1000.0),
+            quote_volume_24h: rng.r#gen::<f64>() * 500_000_000.0,
             change_24h: change,
             change_percent_24h: change_pct,
             open_24h: Price::new(open),
@@ -175,56 +175,3 @@ impl MockMarket {
 
 /// Run the mock data engine
 pub async fn run_mock_engine(tx: broadcast::Sender<WsMessage>) {
-    tracing::info!("Starting mock data engine");
-
-    let mut market = MockMarket::new(Symbol::new("BTC-USD"), 95000.0);
-
-    // Intervals for different data types
-    let mut trade_interval = interval(Duration::from_millis(100));
-    let mut book_interval = interval(Duration::from_millis(250));
-    let mut ticker_interval = interval(Duration::from_secs(1));
-    let mut heartbeat_interval = interval(Duration::from_secs(30));
-
-    loop {
-        tokio::select! {
-            // Generate trades frequently
-            _ = trade_interval.tick() => {
-                let trade = market.generate_trade();
-
-                // Update candle with trade
-                if let Some(closed_candle) = market.update_candle(&trade) {
-                    let _ = tx.send(WsMessage::Candle(closed_candle));
-                }
-
-                // Send current candle state
-                if let Some(ref candle) = market.current_candle {
-                    let _ = tx.send(WsMessage::Candle(candle.clone()));
-                }
-
-                let _ = tx.send(WsMessage::Trade(trade));
-            }
-
-            // Update order book periodically
-            _ = book_interval.tick() => {
-                let book = market.generate_orderbook();
-                let depth = MarketDepth::from_orderbook(&book);
-
-                let _ = tx.send(WsMessage::OrderBook(book));
-                let _ = tx.send(WsMessage::Depth(depth));
-            }
-
-            // Update ticker
-            _ = ticker_interval.tick() => {
-                let ticker = market.generate_ticker();
-                let _ = tx.send(WsMessage::Ticker(ticker));
-            }
-
-            // Heartbeat
-            _ = heartbeat_interval.tick() => {
-                let _ = tx.send(WsMessage::Heartbeat {
-                    timestamp: Utc::now().timestamp_millis(),
-                });
-            }
-        }
-    }
-}
